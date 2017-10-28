@@ -7,10 +7,11 @@
 
 # CameraView
 
-CameraView is a well documented, high-level library that makes capturing pictures and videos easy, addressing most of the common issues and needs, and still leaving you with flexibility where needed.
+CameraView is a well documented, high-level library that makes capturing pictures and videos easy,
+addressing most of the common issues and needs, and still leaving you with flexibility where needed.
 
 ```groovy
-compile 'com.otaliastudios:cameraview:1.2.2'
+compile 'com.otaliastudios:cameraview:1.2.3'
 ```
 
 <p>
@@ -19,7 +20,10 @@ compile 'com.otaliastudios:cameraview:1.2.2'
   <img src="art/screen3.jpg" width="250" vspace="20" hspace="5">
 </p>
 
-*This was a fork of [CameraKit-Android](https://github.com/gogopop/CameraKit-Android), originally a fork of [Google's CameraView](https://github.com/google/cameraview), but has been [completely rewritten](https://github.com/natario1/CameraView/graphs/contributors?type=d). See [below](#roadmap) for a list of what was done. Feel free to contribute - this is under active development.*
+*This was a fork of [CameraKit-Android](https://github.com/gogopop/CameraKit-Android), originally a
+fork of [Google's CameraView](https://github.com/google/cameraview), but has been
+[completely rewritten](https://github.com/natario1/CameraView/graphs/contributors?type=d).
+See below for a [list of what was done](#roadmap) and [licensing info](#contributing-and-licenses).*
 
 ### Features
 
@@ -35,11 +39,12 @@ compile 'com.otaliastudios:cameraview:1.2.2'
   - Take high-resolution pictures with `capturePicture`
   - Take quick snapshots as a freeze frame of the preview with `captureSnapshot` (similar to Snapchat and Instagram)
 - Control HDR, flash, zoom, white balance, exposure correction and more
+- **Frame processing** support
 - **Metadata** support for pictures and videos
   - Automatically detected orientation tags
   - Plug in location tags with `setLocation()` API
 - `CameraUtils` to help with Bitmaps and orientations
-- Lightweight, no dependencies, just support `ExifInterface`
+- **Lightweight**, no dependencies, just support `ExifInterface`
 - Works down to API level 15
 
 # Docs
@@ -53,11 +58,12 @@ compile 'com.otaliastudios:cameraview:1.2.2'
   - [Center Inside](#center-inside)
   - [Center Crop](#center-crop)
 - [Camera Controls](#camera-controls)
+- [Frame Processing](#frame-processing)
 - [Other APIs](#other-apis)  
 - [Permissions Behavior](#permissions-behavior)
-- [Manifest file](#manifest-file)
-- [Roadmap](#roadmap)
+- [Logging](#logging)
 - [Device-specific issues](#device-specific-issues)
+- [Roadmap](#roadmap)
 
 ## Usage
 
@@ -432,6 +438,43 @@ cameraView.setPlaySounds(true);
 cameraView.setPlaySounds(false);
 ```
 
+## Frame Processing
+
+We support frame processors that will receive data from the camera preview stream:
+
+```java
+cameraView.addFrameProcessor(new FrameProcessor() {
+    @Override
+    @WorkerThread
+    public void process(Frame frame) {
+        byte[] data = frame.getData();
+        int rotation = frame.getRotation();
+        long time = frame.getTime();
+        Size size = frame.getSize();
+        int format = frame.getFormat();
+        // Process...
+    }
+}
+```
+
+For your convenience, the `FrameProcessor` method is run in a background thread so you can do your job
+in a synchronous fashion. Once the process method returns, internally we will re-use the `Frame` instance and
+apply new data to it. So:
+
+- you can do your job synchronously in the `process()` method
+- if you must hold the `Frame` instance longer, use `frame = frame.freeze()` to get a frozen instance
+  that will not be affected
+
+|Frame API|Type|Description|
+|---------|----|-----------|
+|`frame.getData()`|`byte[]`|The current preview frame, in its original orientation.|
+|`frame.getTime()`|`long`|The preview timestamp, in `System.currentTimeMillis()` reference.|
+|`frame.getRotation()`|`int`|The rotation that should be applied to the byte array in order to see what the user sees.|
+|`frame.getSize()`|`Size`|The frame size, before any rotation is applied, to access data.|
+|`frame.getFormat()`|`int`|The frame `ImageFormat`. This will always be `ImageFormat.NV21` for now.|
+|`frame.freeze()`|`Frame`|Clones this frame and makes it immutable. Can be expensive because requires copying the byte array.|
+|`frame.release()`|`-`|Disposes the content of this frame. Should be used on frozen frames to release memory.|
+
 ## Other APIs
 
 Other APIs not mentioned above are provided, and are well documented and commented in code.
@@ -456,7 +499,7 @@ Other APIs not mentioned above are provided, and are well documented and comment
 |`getSnapshotSize()`|Returns `getPreviewSize()`, since a snapshot is a preview frame.|
 |`getPictureSize()`|Returns the size of the output picture. The aspect ratio is consistent with `getPreviewSize()`.|
 
-Take also a look at public methods in `CameraUtils`, `CameraOptions`, `ExtraProperties`, `CameraLogger`.
+Take also a look at public methods in `CameraUtils`, `CameraOptions`, `ExtraProperties`.
 
 ## Permissions behavior
 
@@ -465,13 +508,13 @@ Take also a look at public methods in `CameraUtils`, `CameraOptions`, `ExtraProp
 - `android.permission.CAMERA` : required for capturing pictures and videos
 - `android.permission.RECORD_AUDIO` : required for capturing videos with `Audio.ON` (the default)
 
-You can handle permissions yourself and then call `CameraView.start()` once they are acquired. If they are not, `CameraView` will request permissions to the user based on whether they are needed. In that case, you can restart the camera if you have a successful response from `onRequestPermissionResults()`.
+### Declaration
 
-## Manifest file
+The library manifest file declares the `android.permission.CAMERA` permission, but not the audio one.
+This means that:
 
-The library manifest file is not strict and only asks for camera permissions. This means that:
-
-- If you wish to record videos with `Audio.ON` (the default), you should also add `android.permission.RECORD_AUDIO` to required permissions
+- If you wish to record videos with `Audio.ON` (the default), you should also add
+  `android.permission.RECORD_AUDIO` to required permissions
 
 ```xml
 <uses-permission android:name="android.permission.RECORD_AUDIO"/>
@@ -485,11 +528,54 @@ The library manifest file is not strict and only asks for camera permissions. Th
     android:required="true"/>
 ```
 
-If you don't request this feature, you can use `CameraUtils.hasCameras()` to detect if current device has cameras, and then start the camera view.
+If you don't request this feature, you can use `CameraUtils.hasCameras()` to detect if current
+device has cameras, and then start the camera view.
+
+### Handling
+
+On Marshmallow+, the user must explicitly approve our permissions. You can
+
+- handle permissions yourself and then call `cameraView.start()` once they are acquired
+- or call `cameraView.start()` anyway: `CameraView` will present a permission request to the user based on
+  whether they are needed or not with the current configuration.
+
+In the second case, you should restart the camera if you have a successful response from `onRequestPermissionResults()`.
+
+## Logging
+
+`CameraView` will log a lot of interesting events related to the camera lifecycle. These are important
+to identify bugs. The default logger will simply use Android `Log` methods posting to logcat.
+
+You can attach and detach external loggers using `CameraLogger.registerLogger()`:
+
+```java
+CameraLogger.registerLogger(new Logger() {
+    @Override
+    public void log(@LogLevel int level, String tag, String message, @Nullable Throwable throwable) {
+        // For example...
+        Crashlytics.log(message);
+    }
+});
+```
+
+Make sure you enable the logger using `CameraLogger.setLogLevel(@LogLevel int)`. The default will only
+log error events.
+
+## Device-specific issues
+
+There are a couple of known issues if you are working with certain devices. The emulator is one of
+the most tricky in this sense.
+
+- Devices, or activities, with hardware acceleration turned off: this can be the case with emulators.
+  In this case we will use SurfaceView as our surface provider. That is intrinsically flawed and can't
+  deal with all we want to do here (runtime layout changes, scaling, etc.). So, nothing to do in this case.
+- Devices with no support for MediaRecorder: the emulator does not support it, officially. This means
+  that video/audio recording is flawed. Again, not our fault.
 
 ## Roadmap
 
-This is what was done since the library was forked. I have kept the original structure, but practically all the code was changed.
+This is what was done since the library was forked. I have kept the original structure, but practically
+all the code was changed.
 
 - *a huge number of serious bugs fixed*
 - *decent orientation support for both pictures and videos*
@@ -517,21 +603,25 @@ This is what was done since the library was forked. I have kept the original str
 - *Tests!*
 - *`CameraLogger` APIs for logging and bug reports*
 - *Better threading, start() in worker thread and callbacks in UI*
+- *Frame processor support*
+- *inject external loggers*
 
 These are still things that need to be done, off the top of my head:
 
 - [ ] `Camera2` integration
-- [ ] check onPause / onStop / onSaveInstanceState consistency
 - [ ] add a `setPreferredAspectRatio` API to choose the capture size. Preview size will adapt, and then, if let free, the CameraView will adapt as well
 - [ ] animate grid lines similar to stock camera app
 - [ ] add onRequestPermissionResults for easy permission callback
 - [ ] better error handling, maybe with a onError(e) method in the public listener, or have each public method return a boolean
 - [ ] decent code coverage
 
-## Device-specific issues
+# Contributing and licenses
 
-There are a couple of known issues if you are working with certain devices. The emulator is one of
-the most tricky in this sense.
+The original project which served as a starting point for this library,
+[CameraKit-Android](https://github.com/wonderkiln/CameraKit-Android), is licensed under the
+[MIT](https://github.com/wonderkiln/CameraKit-Android/blob/master/LICENSE) license.
+Additional work is now licensed under the [MIT](https://github.com/natario1/CameraView/blob/master/LICENSE)
+license as well.
 
-- Devices, or activities, with hardware acceleration turned off: this can be the case with emulators. In this case we will use SurfaceView as our surface provider. That is intrinsically flawed and can't deal with all we want to do here (runtime layout changes, scaling, etc.). So, nothing to do in this case.
-- Devices with no support for MediaRecorder: the emulator does not support it, officially. This means that video/audio recording is flawed. Again, not our fault.
+You are welcome to contribute with suggestions or pull requests, this is under active development.
+To contact me, <a href="mailto:mat.iavarone@gmail.com">send an email.</a>
